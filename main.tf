@@ -17,11 +17,12 @@ locals {
   # Include only one group of secrets - for github, gitlab or bitbucket
   has_secrets = var.atlantis_gitlab_user_token != "" || var.atlantis_github_user_token != "" || var.atlantis_bitbucket_user_token != ""
 
-  secret_name_key = local.has_secrets ? var.atlantis_gitlab_user_token != "" ? "ATLANTIS_GITLAB_TOKEN" : var.atlantis_github_user_token != "" ? "ATLANTIS_GH_TOKEN" : "ATLANTIS_BITBUCKET_TOKEN" : "unknown_secret_name_key"
+  # token
+  secret_name_key        = local.has_secrets ? var.atlantis_gitlab_user_token != "" ? "ATLANTIS_GITLAB_TOKEN" : var.atlantis_github_user_token != "" ? "ATLANTIS_GH_TOKEN" : "ATLANTIS_BITBUCKET_TOKEN" : ""
+  secret_name_value_from = local.has_secrets ? var.atlantis_gitlab_user_token != "" ? var.atlantis_gitlab_user_token_ssm_parameter_name : var.atlantis_github_user_token != "" ? var.atlantis_github_user_token_ssm_parameter_name : var.atlantis_bitbucket_user_token_ssm_parameter_name : ""
 
-  secret_name_value_from = local.has_secrets ? var.atlantis_gitlab_user_token != "" ? var.atlantis_gitlab_user_token_ssm_parameter_name : var.atlantis_github_user_token != "" ? var.atlantis_github_user_token_ssm_parameter_name : var.atlantis_bitbucket_user_token_ssm_parameter_name : "unknown_secret_name_value"
-
-  secret_webhook_key = local.has_secrets ? var.atlantis_gitlab_user_token != "" ? "ATLANTIS_GITLAB_WEBHOOK_SECRET" : var.atlantis_github_user_token != "" ? "ATLANTIS_GH_WEBHOOK_SECRET" : "ATLANTIS_BITBUCKET_WEBHOOK_SECRET" : "unknown_secret_webhook_key"
+  # webhook
+  secret_webhook_key = local.has_secrets || var.atlantis_github_webhook_secret != "" ? var.atlantis_gitlab_user_token != "" ? "ATLANTIS_GITLAB_WEBHOOK_SECRET" : var.atlantis_github_user_token != "" || var.atlantis_github_webhook_secret != "" ? "ATLANTIS_GH_WEBHOOK_SECRET" : "ATLANTIS_BITBUCKET_WEBHOOK_SECRET" : ""
 
   # determine if the alb has authentication enabled, otherwise forward the traffic unauthenticated
   alb_authenication_method = length(keys(var.alb_authenticate_oidc)) > 0 ? "authenticate-oidc" : length(keys(var.alb_authenticate_cognito)) > 0 ? "authenticate-cognito" : "forward"
@@ -76,21 +77,24 @@ locals {
     },
   ]
 
+  # ECS task definition
+  latest_task_definition_rev = var.external_task_definition_updates ? max(aws_ecs_task_definition.atlantis.revision, data.aws_ecs_task_definition.atlantis[0].revision) : aws_ecs_task_definition.atlantis.revision
+
   # Secret access tokens
-  container_definition_secrets_1 = [
+  container_definition_secrets_1 = local.secret_name_key != "" && local.secret_name_value_from != "" ? [
     {
       name      = local.secret_name_key
       valueFrom = local.secret_name_value_from
     },
-  ]
+  ] : []
 
   # Webhook secrets are not supported by BitBucket
-  container_definition_secrets_2 = [
+  container_definition_secrets_2 = local.secret_webhook_key != "" ? [
     {
       name      = local.secret_webhook_key
       valueFrom = var.webhook_ssm_parameter_name
     },
-  ]
+  ] : []
 
   tags = merge(
     {
@@ -113,6 +117,8 @@ data "aws_route53_zone" "this" {
 # Secret for webhook
 ###################
 resource "random_id" "webhook" {
+  count = var.atlantis_github_webhook_secret != "" ? 0 : 1
+
   byte_length = "64"
 }
 
@@ -121,7 +127,7 @@ resource "aws_ssm_parameter" "webhook" {
 
   name  = var.webhook_ssm_parameter_name
   type  = "SecureString"
-  value = random_id.webhook.hex
+  value = coalesce(var.atlantis_github_webhook_secret, join("", random_id.webhook.*.hex))
 
   tags = local.tags
 }
@@ -560,6 +566,8 @@ resource "aws_ecs_task_definition" "atlantis" {
 }
 
 data "aws_ecs_task_definition" "atlantis" {
+  count = var.external_task_definition_updates ? 1 : 0
+
   task_definition = var.name
 
   depends_on = [aws_ecs_task_definition.atlantis]
@@ -568,10 +576,8 @@ data "aws_ecs_task_definition" "atlantis" {
 resource "aws_ecs_service" "atlantis" {
   name    = var.name
   cluster = module.ecs.this_ecs_cluster_id
-  task_definition = "${data.aws_ecs_task_definition.atlantis.family}:${max(
-    aws_ecs_task_definition.atlantis.revision,
-    data.aws_ecs_task_definition.atlantis.revision,
-  )}"
+
+  task_definition                    = "${var.name}:${local.latest_task_definition_rev}"
   desired_count                      = var.ecs_service_desired_count
   launch_type                        = "FARGATE"
   deployment_maximum_percent         = var.ecs_service_deployment_maximum_percent

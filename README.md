@@ -203,6 +203,7 @@ allow_github_webhooks        = true
 | atlantis\_github\_user | GitHub username that is running the Atlantis command | `string` | `""` | no |
 | atlantis\_github\_user\_token | GitHub token of the user that is running the Atlantis command | `string` | `""` | no |
 | atlantis\_github\_user\_token\_ssm\_parameter\_name | Name of SSM parameter to keep atlantis\_github\_user\_token | `string` | `"/atlantis/github/user/token"` | no |
+| atlantis\_github\_webhook\_secret | GitHub webhook secret of an app that is running the Atlantis command | `string` | `""` | no |
 | atlantis\_gitlab\_hostname | Gitlab server hostname, defaults to gitlab.com | `string` | `"gitlab.com"` | no |
 | atlantis\_gitlab\_user | Gitlab username that is running the Atlantis command | `string` | `""` | no |
 | atlantis\_gitlab\_user\_token | Gitlab token of the user that is running the Atlantis command | `string` | `""` | no |
@@ -235,6 +236,7 @@ allow_github_webhooks        = true
 | ecs\_task\_memory | The amount (in MiB) of memory used by the task | `number` | `512` | no |
 | entrypoint | The entry point that is passed to the container | `list(string)` | `null` | no |
 | essential | Determines whether all other containers in a task are stopped, if this container fails or stops for any reason. Due to how Terraform type casts booleans in json it is required to double quote this value | `bool` | `true` | no |
+| external\_task\_definition\_updates | Enable to allow the task definition to be updated outside of this Terraform module | `bool` | `false` | no |
 | firelens\_configuration | The FireLens configuration for the container. This is used to specify and configure a log router for container logs. For more details, see https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_FirelensConfiguration.html | <pre>object({<br>    type    = string<br>    options = map(string)<br>  })</pre> | `null` | no |
 | github\_webhooks\_cidr\_blocks | List of CIDR blocks used by GitHub webhooks | `list(string)` | <pre>[<br>  "140.82.112.0/20",<br>  "185.199.108.0/22",<br>  "192.30.252.0/22"<br>]</pre> | no |
 | internal | Whether the load balancer is internal or external | `bool` | `false` | no |
